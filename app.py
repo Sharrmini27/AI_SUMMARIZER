@@ -1,77 +1,52 @@
 import streamlit as st
 from transformers import pipeline
 from newspaper import Article
-import time
 import nltk
 
-# Requirement: Download necessary NLTK data for web scraping
-@st.cache_resource
-def download_nltk_data():
-    try:
-        nltk.download('punkt')
-        nltk.download('punkt_tab')
-    except Exception as e:
-        st.error(f"Error downloading NLTK data: {e}")
+# Force download of required NLTK data
+try:
+    nltk.download('punkt')
+    nltk.download('punkt_tab')
+except:
+    pass
 
-download_nltk_data()
-
-# Page Setup (Reflecting standard dashboard requirements)
 st.set_page_config(page_title="AI News Summarizer", page_icon="📝")
 
-# Model Loading: Using DistilBART for hardware feasibility [cite: 42, 77]
+# 1. Load a smaller model to prevent memory crashes (OSError 1455)
 @st.cache_resource
 def load_summarizer():
-    # Explicit task and model definition to prevent KeyError errors
-    return pipeline(task="summarization", model="sshleifer/distilbart-cnn-12-6")
+    # T5-small is much smaller than BART and very stable for deployment
+    return pipeline("summarization", model="t5-small")
 
 summarizer = load_summarizer()
 
-st.title("🤖 AI-Powered News Summarizer")
-st.markdown("---")
+st.title("🤖 AI News Summarizer")
+st.write("Summarize any news article URL instantly.")
 
-# User Input Section
-url = st.text_input("🔗 Paste News Article URL here:", placeholder="https://www.channelnewsasia.com/...")
+# 2. Input
+url = st.text_input("Paste News URL here:")
 
-if st.button("Generate Summary"):
+if st.button("Summarize"):
     if url:
         try:
-            with st.spinner('AI is reading and distilling the article...'):
-                start_time = time.time()
-                
-                # Article Fetching and Parsing
+            with st.spinner('Reading article...'):
                 article = Article(url)
                 article.download()
                 article.parse()
                 
-                if not article.text:
-                    st.error("❌ Could not extract text from this URL. Some sites block AI access.")
+                # Logic to handle short articles
+                text = article.text
+                if len(text.split()) < 30:
+                    st.warning("Article is too short to summarize.")
                 else:
-                    # Summarization with safe truncation [cite: 33, 72]
-                    # We process the first 3000 characters to ensure system stability
-                    summary_output = summarizer(article.text[:3000], max_length=130, min_length=30, do_sample=False)
-                    summary_text = summary_output[0]['summary_text']
+                    # AI Processing
+                    summary = summarizer(text[:2000], max_length=100, min_length=30, do_sample=False)
+                    st.subheader(f"Title: {article.title}")
+                    st.success(summary[0]['summary_text'])
                     
-                    duration = round(time.time() - start_time, 2)
-                    
-                    # Display Results
-                    st.subheader(f"📄 Title: {article.title}")
-                    st.success(summary_text)
-                    
-                    # Performance Metrics [cite: 121, 163, 171]
-                    orig_len = len(article.text.split())
-                    summ_len = len(summary_text.split())
-                    reduction = round((1 - (summ_len / orig_len)) * 100, 1)
-                    
-                    st.write("---")
-                    st.info(f"**Performance:** {orig_len} words ➡️ {summ_len} words ({reduction}% reduction) | ⏱ {duration}s")
-                    
+                    # Simple Metrics
+                    st.info(f"Original: {len(text.split())} words | Summary: {len(summary[0]['summary_text'].split())} words")
         except Exception as e:
-            st.error(f"⚠️ Error: {str(e)}")
+            st.error(f"Error: {e}")
     else:
-        st.warning("⚠️ Please provide a URL first.")
-
-# Sidebar Info (Ensuring clarity for graders) [cite: 163, 182]
-st.sidebar.title("Project Details")
-st.sidebar.write("**Course:** JIE43303 NLP")
-st.sidebar.write("**Model:** DistilBART (Optimized)")
-st.sidebar.markdown("This system uses **Abstractive Summarization** to rewrite news articles concisely.")
+        st.warning("Please enter a URL.")
